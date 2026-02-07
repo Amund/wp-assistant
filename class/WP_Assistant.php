@@ -6,7 +6,7 @@ use League\HTMLToMarkdown\HtmlConverter;
 class WP_Assistant
 {
     private static $db;
-    private static $limit = 2;
+    private static $limit = 5;
 
     private static function db()
     {
@@ -44,6 +44,22 @@ class WP_Assistant
     {
         $converter = new HtmlConverter(['strip_tags' => true]);
         return $converter->convert($html);
+    }
+
+    public static function db_remove(int $post_id): void
+    {
+        self::db()->query("DELETE FROM documents WHERE post_id = ?", [$post_id]);
+    }
+
+    public static function db_get_teaser(int $post_id): string
+    {
+        $posts = self::db()->query("SELECT teaser FROM documents WHERE post_id = ?", [$post_id])->fetchArray();
+        return (string) ($posts[0]['teaser'] ?? '');
+    }
+
+    public static function db_get_all(): array
+    {
+        return self::db()->query("SELECT post_id, teaser FROM documents")->fetchArray();
     }
 
     public static function db_update_post(int $post_id, string $teaser): void
@@ -149,5 +165,92 @@ class WP_Assistant
         }
 
         return $value;
+    }
+
+    public static function db_remove_old_posts(): void {}
+
+    public static function db_reindex(): void
+    {
+        $post_types = array_flip(self::get_post_types());
+        foreach (self::db_get_all() as $row) {
+            $post_id = $row['post_id'];
+            $p = get_post($post_id);
+
+            // remove invalid posts in vector db
+            if (
+                $p === null
+                || $p->post_status !== 'publish'
+                || $p->post_password !== ''
+                || !isset($post_types[$p->post_type])
+            ) {
+                self::db_remove($post_id);
+            }
+        }
+    }
+
+    static function get_post_types()
+    {
+        // get public post_types
+        $post_types = get_post_types([], 'objects');
+        $public_post_types = [];
+        foreach ($post_types as $post_type) {
+            if ($post_type->public) {
+                $public_post_types[] = $post_type->name;
+            }
+        }
+        return array_diff($public_post_types, ['attachment']);
+    }
+
+    static function get_posts()
+    {
+        // load all posts from public post_types    
+        $posts = get_posts([
+            'post_type' => self::get_post_types(),
+            'posts_per_page' => -1,
+            'post_status' => 'publish',
+            'orderby' => 'post_type',
+        ]);
+
+        foreach ($posts as $k => $p) {
+            $post_type = get_post_type_object(get_post_type($p));
+            $posts[$k] = [
+                'id' => $p->ID,
+                'post_type' => $post_type->labels->singular_name,
+                'title' => $p->post_title,
+                'url' => get_edit_post_link($p->ID),
+                'teaser' => get_post_meta($p->ID, '_wp_assistant_teaser', true),
+            ];
+        }
+
+        return $posts;
+    }
+
+    static function get_posts_without_teaser()
+    {
+        $posts = get_posts([
+            'post_type' => self::get_post_types(),
+            'posts_per_page' => -1,
+            'post_status' => 'publish',
+            'orderby' => 'post_type',
+            'meta_query' => [
+                [
+                    'key' => '_wp_assistant_teaser',
+                    'compare' => 'NOT EXISTS',
+                ],
+                [
+                    'key' => '_wp_assistant_teaser',
+                    'value' => '',
+                    'compare' => '=',
+                ],
+            ],
+            'fields' => 'ids',
+        ]);
+
+        return $posts;
+    }
+
+    static function count_posts_without_teaser()
+    {
+        return count(self::get_posts_without_teaser());
     }
 }

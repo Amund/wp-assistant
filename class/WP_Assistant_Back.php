@@ -27,7 +27,27 @@ class WP_Assistant_Back
     static function options_page()
     {
         $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'general';
-        $posts = self::get_posts();
+
+        $icons = [
+            'ok' => '<i class="dashicons dashicons-yes" style="color: green;"></i>',
+            'ko' => '<i class="dashicons dashicons-no-alt" style="color: red;"></i>',
+        ];
+        $posts = WP_Assistant::get_posts();
+        foreach ($posts as $i => $post) {
+            $wp_teaser = $post['teaser'];
+            $db_teaser = WP_Assistant::db_get_teaser($post['id']);
+            $icon = $wp_teaser == $db_teaser ? $icons['ok'] : $icons['ko'];
+            $posts[$i]['link'] = strtr(
+                '<tr><td>[type]</td><td><a href="[url]" target="_blank">[title]</a></td><td>[teaser]</td><td>[icon]</td></tr>',
+                [
+                    '[url]' => $posts[$i]['url'],
+                    '[title]' => $posts[$i]['title'],
+                    '[type]' => $posts[$i]['post_type'],
+                    '[teaser]' => $posts[$i]['teaser'],
+                    '[icon]' => $icon,
+                ],
+            );
+        }
 
         $teaser_prompt = WP_Assistant::get_teaser_prompt();
         $answer_prompt = WP_Assistant::get_answer_prompt();
@@ -71,8 +91,8 @@ class WP_Assistant_Back
                         <tr>
                             <th>Type</th>
                             <th>Contenu</th>
-                            <th>Résumé</th>
-                            <th>DB</th>
+                            <th>Description</th>
+                            <th>Index</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -101,6 +121,7 @@ class WP_Assistant_Back
                 .posts {
                     border-collapse: collapse;
                     margin-block: 2em;
+                    width: 100%;
 
                     th,
                     td {
@@ -166,88 +187,13 @@ class WP_Assistant_Back
         wp_die();
     }
 
-    static function get_post_types()
-    {
-        // get public post_types
-        $post_types = get_post_types([], 'objects');
-        $public_post_types = [];
-        foreach ($post_types as $post_type) {
-            if ($post_type->public) {
-                $public_post_types[] = $post_type->name;
-            }
-        }
-        return array_diff($public_post_types, ['attachment']);
-    }
-
-    static function get_posts()
-    {
-        $posts = get_posts([
-            'post_type' => self::get_post_types(),
-            'posts_per_page' => -1,
-            'post_status' => 'publish',
-            'orderby' => 'post_type',
-        ]);
-
-        foreach ($posts as $k => $p) {
-            $post_type = get_post_type_object(get_post_type($p));
-            $posts[$k] = [
-                'id' => $p->ID,
-                'post_type' => $post_type->labels->singular_name,
-                'title' => $p->post_title,
-                'url' => get_edit_post_link($p->ID),
-                'teaser' => get_post_meta($p->ID, '_wp_assistant_teaser', true),
-            ];
-            $posts[$k]['link'] = strtr(
-                '<tr><td>[type]</td><td><a href="[url]" target="_blank">[title]</a></td><td>[teaser]</td><td>[icon]</td></tr>',
-                [
-                    '[url]' => $posts[$k]['url'],
-                    '[title]' => $posts[$k]['title'],
-                    '[type]' => $posts[$k]['post_type'],
-                    '[teaser]' => $posts[$k]['teaser'],
-                    '[icon]' => $k % 2 ? '<i class="dashicons dashicons-yes" style="color: green;"></i>' : '<i class="dashicons dashicons-no-alt" style="color: red;"></i>',
-                ],
-            );
-        }
-
-        return $posts;
-    }
-
-    static function get_posts_without_teaser()
-    {
-        $posts = get_posts([
-            'post_type' => self::get_post_types(),
-            'posts_per_page' => -1,
-            'post_status' => 'publish',
-            'orderby' => 'post_type',
-            'meta_query' => [
-                [
-                    'key' => '_wp_assistant_teaser',
-                    'compare' => 'NOT EXISTS',
-                ],
-                [
-                    'key' => '_wp_assistant_teaser',
-                    'value' => '',
-                    'compare' => '=',
-                ],
-            ],
-            'fields' => 'ids',
-        ]);
-
-        return $posts;
-    }
-
-    static function count_posts_without_teaser()
-    {
-        return count(self::get_posts_without_teaser());
-    }
-
     static function add_teaser()
     {
         add_meta_box(
             'wp_assistant_teaser',
             'Assistant',
             [self::class, 'display_teaser'],
-            self::get_post_types(),
+            WP_Assistant::get_post_types(),
             'side',
             'high'
         );
@@ -300,7 +246,8 @@ class WP_Assistant_Back
         if (isset($_POST['wp_assistant_teaser'])) {
             $value = stripslashes(sanitize_text_field($_POST['wp_assistant_teaser']));
             $old_value = get_post_meta($post_id, '_wp_assistant_teaser', true);
-            if ($value != $old_value) {
+            $db_teaser = WP_Assistant::db_get_teaser($post_id);
+            if ($value != $old_value || $value != $db_teaser) {
                 WP_Assistant::db_update_post($post_id, $value);
             }
         }

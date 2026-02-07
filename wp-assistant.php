@@ -34,11 +34,7 @@ if (is_admin()) {
 
 /*
 TODO:
-- affichage diff entre bases MySQL/Turso
 - Batch de génération des descriptions manquantes en base MySQL
-- Réindexation des tables Turso
-- Diff MySQL/Turso: suppression des posts Turso supprimés dans MySQL
-- Diff MySQL/Turso: reindexation teaser Turso différents dans MySQL
 - Gestion des fournisseurs/modèles (embed, chat), clé d'api - Wordpress AI SDK
 - Affichage conditionnel du bouton de génération de description
 - Gestion des tokens, quotas fournisseurs ?
