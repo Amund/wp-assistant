@@ -11,6 +11,8 @@
 
 // composer require turso/libsql partitech/php-mistral league/html-to-markdown michelf/php-markdown
 
+namespace amund\WP_Assistant;
+
 if (!defined('ABSPATH')) {
     exit();
 }
@@ -19,17 +21,27 @@ if (defined('DOING_AJAX') && DOING_AJAX && ! empty($_POST['action']) && ($_POST[
     return;
 }
 
-require_once __DIR__ . '/class/WP_Assistant.php';
-require_once __DIR__ . '/class/WP_Assistant_Client.php';
-require_once __DIR__ . '/class/WP_Assistant_Back.php';
-require_once __DIR__ . '/class/WP_Assistant_Front.php';
+// if (!defined('WP_ASSISTANT_DB_PATH')) throw new Exception('WP_ASSISTANT_DB_PATH is not defined');
+
+
+// require_once __DIR__ . '/class/Assistant.php';
+// require_once __DIR__ . '/class/Back.php';
+// require_once __DIR__ . '/class/Chunker.php';
+require_once __DIR__ . '/class/Cli.php';
+// require_once __DIR__ . '/class/Client.php';
+require_once __DIR__ . '/class/Db.php';
+// require_once __DIR__ . '/class/Front.php';
 
 define('WP_ASSISTANT_DB_PATH', WP_CONTENT_DIR . '/../../assistant.db');
 
-add_action('plugins_loaded', [WP_Assistant_Front::class, 'init']);
+// add_action('plugins_loaded', [Front::class, 'init']);
 
 if (is_admin()) {
-    add_action('plugins_loaded', [WP_Assistant_Back::class, 'init']);
+    // add_action('plugins_loaded', [Back::class, 'init']);
+}
+
+if (defined('WP_CLI') && WP_CLI) {
+    \WP_CLI::add_command('assistant', 'amund\\WP_Assistant\\Cli');
 }
 
 /*

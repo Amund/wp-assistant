@@ -1,8 +1,10 @@
 <?php
 
+namespace amund\WP_Assistant;
+
 use Michelf\Markdown;
 
-class WP_Assistant_Front
+class Front
 {
     public static function init()
     {
@@ -96,6 +98,7 @@ class WP_Assistant_Front
             wp_send_json_error('Aucune demande');
         }
 
+        // $client = WP_Assistant_Client::get_answer_client();
         $question = sanitize_text_field($_POST['question']);
         $response = WP_Assistant::rag_answer($question);
 
