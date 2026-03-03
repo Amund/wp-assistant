@@ -1,6 +1,8 @@
 <?php
 
-class WP_Assistant_Back
+namespace amund\WP_Assistant;
+
+class Back
 {
     static function init()
     {
@@ -49,8 +51,8 @@ class WP_Assistant_Back
             );
         }
 
-        $teaser_prompt = WP_Assistant::get_teaser_prompt();
-        $answer_prompt = WP_Assistant::get_answer_prompt();
+        $teaser_prompt = WP_Assistant_Client::get_teaser_prompt();
+        $answer_prompt = WP_Assistant_Client::get_answer_prompt();
 ?>
         <div class="wrap wp-assistant">
             <h1>WP Assistant</h1>
@@ -105,6 +107,34 @@ class WP_Assistant_Back
                 <div class="test">
                     <?php do_action('wp_assistant_form') ?>
                 </div>
+
+                <pre>
+                    <?php
+                    // Fonction utilitaire pour afficher les chunks avec leurs tailles
+                    function displayChunks(array $chunks, $id): void
+                    {
+                        echo "\n##############################\n";
+                        echo "[$id] Nombre de chunks : " . count($chunks) . "\n\n";
+                        foreach ($chunks as $i => $chunk) {
+                            echo "=== Chunk " . ($i + 1) . " (" . mb_strlen($chunk) . " caractères) ===\n";
+                            echo $chunk . "\n\n";
+                        }
+                    }
+
+                    foreach ([68, 65, 73, 63, 72, 71, 70, 66, 67, 69] as $id) {
+                        // foreach ([63] as $id) {
+                        $text = WP_Assistant::text_content($id);
+                        // var_dump("$text");
+
+                        try {
+                            $chunks = WP_Assistant_Chunker::chunk($text, 1000, 0);
+                            displayChunks($chunks, $id);
+                        } catch (Exception $e) {
+                            echo "Erreur : " . $e->getMessage();
+                        }
+                    }
+                    ?>
+                </pre>
 
             <?php endif; ?>
         </div>
