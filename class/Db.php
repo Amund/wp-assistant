@@ -23,12 +23,8 @@ class Db
         'delete_chunks' => 'DELETE FROM `chunks` WHERE `post_id` = ?',
     ];
 
-    public function __construct(string $path = '', int $embed_size = 1024)
+    public function __construct(string $path, int $embed_size = 1024)
     {
-        if (empty($path)) {
-            $path = WP_CONTENT_DIR . '/wp-assistant.db';
-        }
-
         $this->path = $path;
         $this->embed_size = $embed_size;
 

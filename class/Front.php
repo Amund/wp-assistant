@@ -6,8 +6,12 @@ use Michelf\Markdown;
 
 class Front
 {
-    public static function init()
+    private $plugin;
+
+    public function __construct($plugin)
     {
+        $this->plugin = $plugin;
+
         add_action('wp_ajax_wp_assistant_answer', [self::class, 'answer']);
         add_action('wp_ajax_nopriv_wp_assistant_answer', [self::class, 'answer']);
         add_action('wp_assistant_form', [self::class, 'form']);

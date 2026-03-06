@@ -9,6 +9,12 @@ use Exception;
  */
 class Cli
 {
+    private $plugin;
+
+    public function __construct( $plugin ) {
+        $this->plugin = $plugin;
+    }
+
     /**
      * Launch all tests, all tests of a specific class, or just one test.
      *
@@ -165,7 +171,7 @@ class Cli
             \WP_CLI::error('Post not found');
         }
 
-        $assistant = new Assistant();
+        $assistant = $this->plugin->get('assistant');
         $text = $assistant->text($post_id);
         if (empty($text)) {
             \WP_CLI::warning('No text found');
