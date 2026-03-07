@@ -22,6 +22,7 @@ class Db
         'insert_chunk' => 'INSERT INTO `chunks` (`post_id`, `embed`) VALUES (?, ?)',
         'delete_chunks' => 'DELETE FROM `chunks` WHERE `post_id` = ?',
         'search_chunks' => 'SELECT c.post_id, vector_distance_cos(c.embed, vector(?)) as score FROM chunks c WHERE c.embed IS NOT NULL ORDER BY score DESC LIMIT ?',
+        'search_chunks_by_lang' => 'SELECT c.post_id, vector_distance_cos(c.embed, vector(?)) as score FROM chunks c JOIN documents d ON c.post_id = d.post_id WHERE c.embed IS NOT NULL AND d.lang = ? ORDER BY score DESC LIMIT ?',
     ];
 
     public function __construct(string $path, int $embed_size = 1024)
@@ -48,6 +49,7 @@ class Db
             CREATE INDEX IF NOT EXISTS `chunks_embed_idx` ON chunks (
                 libsql_vector_idx(`embed`)
             );
+            CREATE INDEX IF NOT EXISTS `documents_lang_idx` ON documents (`lang`);
         ');
     }
 
@@ -110,22 +112,31 @@ class Db
         $this->stmt('insert_chunk')->bind([$post_id, '[' . implode(',', $embed) . ']'])->query();
     }
 
-    public function search_chunks(array $embedding, int $limit = 10): array
+    public function search_chunks(array $embedding, int $limit = 5, ?string $lang = null): array
     {
         $vector = '[' . implode(',', $embedding) . ']';
-        $result = $this->connection->query(
-            "SELECT c.post_id, vector_distance_cos(c.embed, vector(?)) as score FROM chunks c WHERE c.embed IS NOT NULL ORDER BY score DESC LIMIT ?",
-            [$vector, $limit]
-        );
+
+        if ($lang !== null) {
+            // Use prepared statement with language filter
+            $stmt = $this->stmt('search_chunks_by_lang');
+            $stmt->bind([$vector, $lang, $limit]);
+            $result = $stmt->query();
+        } else {
+            // Use direct query without language filter (backward compatibility)
+            $result = $this->connection->query(
+                "SELECT c.post_id, vector_distance_cos(c.embed, vector(?)) as score FROM chunks c WHERE c.embed IS NOT NULL ORDER BY score DESC LIMIT ?",
+                [$vector, $limit]
+            );
+        }
+
         return $result->fetchArray();
     }
-
 
     public function set_document(int $post_id, string $lang, string $hash, array $embeddings): void
     {
         $tx = $this->connection->transaction();
-        $this->stmt('delete_document')->bind([$post_id])->query();
-        $this->stmt('insert_document')->bind([$post_id, $lang, $hash])->query();
+        $this->unset_document($post_id);
+        $this->insert_document($post_id, $lang, $hash);
         foreach ($embeddings as $embed) {
             $this->insert_chunk($post_id, $embed);
         }
@@ -134,9 +145,7 @@ class Db
 
     public function unset_document(int $post_id): void
     {
-        $tx = $this->connection->transaction();
         $this->stmt('delete_document')->bind([$post_id])->query();
-        $tx->commit();
     }
 
 

@@ -10,9 +10,10 @@ class Back
     {
         $this->plugin = $plugin;
 
-        // WP_Assistant_Client::check_api_key();
+        Client::check_api_key();
         add_action('admin_menu', [$this, 'admin_menu']);
         add_action('admin_init', [$this, 'register_settings']);
+        add_action('wp_ajax_wp_assistant_index_all', [$this, 'index_all_ajax']);
     }
 
     public function admin_menu()
@@ -74,8 +75,6 @@ class Back
 
             <?php if ($active_tab == 'general') : ?>
 
-                <!-- <button id="wp-assistant-index-all" class="button button-primary">Tout indexer</button> -->
-                <!-- <div id="wp-assistant-results"></div> -->
                 <form method="post" action="options.php">
                     <?php settings_fields('wp_assistant_options'); ?>
                     <table class="form-table general">
@@ -112,40 +111,14 @@ class Back
                         <?php foreach ($posts as $p) echo $p['link']; ?>
                     </tbody>
                 </table>
+                <button id="wp-assistant-index-all" class="button button-primary">Tout indexer</button>
+                <div id="wp-assistant-results"></div>
 
             <?php elseif ($active_tab == 'test') : ?>
 
                 <div class="test">
                     <?php do_action('wp_assistant_form') ?>
                 </div>
-
-                <pre>
-                    <?php
-                    // Fonction utilitaire pour afficher les chunks avec leurs tailles
-                    function displayChunks(array $chunks, $id): void
-                    {
-                        echo "\n##############################\n";
-                        echo "[$id] Nombre de chunks : " . count($chunks) . "\n\n";
-                        foreach ($chunks as $i => $chunk) {
-                            echo "=== Chunk " . ($i + 1) . " (" . mb_strlen($chunk) . " caractères) ===\n";
-                            echo $chunk . "\n\n";
-                        }
-                    }
-
-                    foreach ([68, 65, 73, 63, 72, 71, 70, 66, 67, 69] as $id) {
-                        // foreach ([63] as $id) {
-                        $text = $assistant->text($id);
-                        // var_dump("$text");
-
-                        try {
-                            $chunks = Chunker::chunk($text, 1000, 0);
-                            displayChunks($chunks, $id);
-                        } catch (\Exception $e) {
-                            echo "Erreur : " . $e->getMessage();
-                        }
-                    }
-                    ?>
-                </pre>
 
             <?php endif; ?>
         </div>
@@ -216,7 +189,7 @@ class Back
 <?php
     }
 
-    /*    public function index_all_ajax()
+    public function index_all_ajax()
     {
         check_ajax_referer('wp_assistant_index_all', 'security');
 
@@ -224,7 +197,41 @@ class Back
             wp_die('Unauthorized user');
         }
 
+        $assistant = $this->plugin->get('assistant');
+        $posts = $assistant->get_posts();
 
-        wp_die();
-    }*/
+        $total = count($posts);
+        $success = 0;
+        $failed = 0;
+        $skipped = 0;
+
+        $report = [];
+
+        foreach ($posts as $post) {
+            if (!$post['outdated']) {
+                $skipped++;
+                $report[] = sprintf('Post #%d "%s" (%s) : déjà à jour', $post['id'], $post['title'], $post['lang']);
+                continue;
+            }
+
+            $result = $assistant->index_post($post['id']);
+            if ($result) {
+                $success++;
+                $report[] = sprintf('Post #%d "%s" (%s) : indexé avec succès', $post['id'], $post['title'], $post['lang']);
+            } else {
+                $failed++;
+                $report[] = sprintf('Post #%d "%s" (%s) : échec de l\'indexation', $post['id'], $post['title'], $post['lang']);
+            }
+        }
+
+        $html = '<div class="notice notice-info"><p>Indexation terminée.</p></div>';
+        $html .= '<ul>';
+        foreach ($report as $line) {
+            $html .= '<li>' . esc_html($line) . '</li>';
+        }
+        $html .= '</ul>';
+        $html .= sprintf('<p><strong>Résumé :</strong> %d succès, %d échecs, %d ignorés (déjà à jour).</p>', $success, $failed, $skipped);
+
+        wp_die($html);
+    }
 }

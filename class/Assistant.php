@@ -141,6 +141,22 @@ class Assistant
     }
 
     /**
+     * Get the current language of the site.
+     *
+     * @return string The language code (e.g., 'fr', 'en').
+     */
+    public function get_current_lang(): string
+    {
+        if (function_exists('pll_current_language')) {
+            $lang = pll_current_language();
+            if ($lang) {
+                return $lang;
+            }
+        }
+        return explode('_', get_locale())[0];
+    }
+
+    /**
      * Index a post by generating its embeddings and storing them in the database.
      *
      * @param int $post_id The ID of the post to index.
@@ -149,7 +165,7 @@ class Assistant
     public function index_post(int $post_id): bool
     {
         $post = get_post($post_id);
-        if (!$post || $post->post_status !== 'publish') {
+        if (!$post) {
             return false;
         }
 
@@ -168,10 +184,11 @@ class Assistant
         }
 
         // Generate embeddings for each chunk
+        $client = $this->plugin->get('client');
         $embeddings = [];
         foreach ($chunks as $chunk) {
             try {
-                $embedding = \amund\WP_Assistant\Client::embeddings($chunk);
+                $embedding = $client::embeddings($chunk);
                 $embeddings[] = $embedding;
             } catch (\Exception $e) {
                 error_log('WP Assistant: Failed to generate embedding for post ' . $post_id . ': ' . $e->getMessage());
@@ -235,13 +252,15 @@ class Assistant
      */
     public function rag_answer(string $question): string
     {
+        $client = $this->plugin->get('client');
+        $current_lang = $this->get_current_lang();
         try {
             // Generate embedding for the question
-            $embedding = \amund\WP_Assistant\Client::embeddings($question);
+            $embedding = $client::embeddings($question);
 
-            // Search for similar chunks
+            // Search for similar chunks in current language
             $db = $this->plugin->get('db');
-            $results = $db->search_chunks($embedding, 5);
+            $results = $db->search_chunks($embedding, 5, $current_lang);
 
             if (empty($results)) {
                 // No results found, return a default response
@@ -266,19 +285,15 @@ class Assistant
             foreach ($post_ids as $post_id) {
                 $title = get_the_title($post_id);
                 $content = $this->text($post_id);
-                $context_parts[] = "Page: " . $title . "\n" . $content;
+                $context_parts[] = "Post_ID: " . $post_id . "\nTitre: " . $title . "\n" . $content;
             }
             $context = implode("\n\n", $context_parts);
 
-            // Determine language (use first post's language or default)
-            $lang = 'français';
-            if (!empty($post_ids[0])) {
-                $post_lang = $this->get_post_lang($post_ids[0]);
-                $lang = $post_lang === 'fr' ? 'français' : ($post_lang === 'en' ? 'anglais' : $post_lang);
-            }
+            // Determine language label for the prompt
+            $lang = $current_lang === 'fr' ? 'français' : ($current_lang === 'en' ? 'anglais' : $current_lang);
 
             // Generate answer using AI
-            $response = \amund\WP_Assistant\Client::generate_answer([
+            $response = $client::generate_answer([
                 '[LANG]' => $lang,
                 '[CONTENT]' => $context,
                 '[QUERY]' => $question,

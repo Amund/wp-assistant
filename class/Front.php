@@ -15,13 +15,15 @@ class Front
         add_action('wp_ajax_wp_assistant_answer', [$this, 'answer']);
         add_action('wp_ajax_nopriv_wp_assistant_answer', [$this, 'answer']);
         add_action('wp_assistant_form', [self::class, 'form']);
+        add_shortcode('wp_assistant', [$this, 'shortcode']);
     }
 
     public static function form()
     {
 ?>
         <div id="wp-assistant-question">
-            <input type="text" placeholder="Comment puis-je vous aider ?" value="">
+            <?php $placeholder = apply_filters('wp_assistant_placeholder', 'Comment puis-je vous aider ?'); ?>
+            <input type="text" placeholder="<?php echo esc_attr($placeholder); ?>" value="">
             <button class="button">Ok</button>
             <div></div>
         </div>
@@ -104,7 +106,8 @@ class Front
 
         // $client = WP_Assistant_Client::get_answer_client();
         $question = sanitize_text_field($_POST['question']);
-        $response = $this->plugin->get('assistant')->rag_answer($question);
+        $assistant = $this->plugin->get('assistant');
+        $response = $assistant->rag_answer($question);
 
         if ($response === NULL) {
             wp_send_json_error('response_error');
@@ -140,6 +143,13 @@ class Front
         }
 
         wp_send_json_success($message . $posts);
+    }
+
+    public function shortcode(): string
+    {
+        ob_start();
+        self::form();
+        return ob_get_clean();
     }
 }
 

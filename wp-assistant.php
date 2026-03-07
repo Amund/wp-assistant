@@ -58,11 +58,7 @@ add_action('plugins_loaded', function () {
 
 /*
 TODO:
-- indexation des posts individuellement
-- hook save/delete post
-- indexation de masse
 - Logs des questions/réponses dans une base turso séparée
-- paramètrage du placeholder du champs de recherche (multilingue)
 */
 
 class Plugin

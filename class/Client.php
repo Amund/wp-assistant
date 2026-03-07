@@ -30,6 +30,8 @@ Voici ce contexte étendu:
 Voici la question posée par le visiteur:
 
 [QUERY]
+
+
 EOT;
     private static $answer_params = [
         'model' => 'mistral-small-latest',
@@ -122,6 +124,7 @@ EOT;
         $messages = self::client()
             ->getMessages()
             ->addUserMessage($prompt);
+        error_log(var_export($messages, true));
 
         $response = self::client()
             ->chat($messages, self::$answer_params);
