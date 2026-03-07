@@ -17,9 +17,8 @@ class Assistant
     {
         $this->plugin = $plugin;
 
-        // add_action('save_post', [$this, 'save_post'], 9);
-        // add_action('delete_post', [$this, 'delete_post'], 9);
-
+        add_action('save_post', [$this, 'save_post'], 9, 3);
+        add_action('delete_post', [$this, 'delete_post'], 9);
     }
 
     /**
@@ -124,11 +123,175 @@ class Assistant
         return $posts;
     }
 
+    /**
+     * Retrieves the language of a post.
+     *
+     * If Polylang is active, it uses pll_get_post_language to get the post language.
+     * Otherwise, it falls back to the site's locale.
+     *
+     * @param int $post_id The ID of the post.
+     * @return string The language code of the post.
+     */
     public function get_post_lang(int $post_id): string
     {
         if (function_exists('pll_get_post_language')) {
             return pll_get_post_language($post_id);
         }
         return explode('_', get_locale())[0];
+    }
+
+    /**
+     * Index a post by generating its embeddings and storing them in the database.
+     *
+     * @param int $post_id The ID of the post to index.
+     * @return bool True on success, false on failure.
+     */
+    public function index_post(int $post_id): bool
+    {
+        $post = get_post($post_id);
+        if (!$post || $post->post_status !== 'publish') {
+            return false;
+        }
+
+        $text = $this->text($post_id);
+        if (empty($text)) {
+            return false;
+        }
+
+        $hash = $this->hash($text);
+        $lang = $this->get_post_lang($post_id);
+
+        // Generate chunks
+        $chunks = $this->chunk($text);
+        if (empty($chunks)) {
+            return false;
+        }
+
+        // Generate embeddings for each chunk
+        $embeddings = [];
+        foreach ($chunks as $chunk) {
+            try {
+                $embedding = \amund\WP_Assistant\Client::embeddings($chunk);
+                $embeddings[] = $embedding;
+            } catch (\Exception $e) {
+                error_log('WP Assistant: Failed to generate embedding for post ' . $post_id . ': ' . $e->getMessage());
+                return false;
+            }
+        }
+
+        // Store in database
+        try {
+            $db = $this->plugin->get('db');
+            $db->set_document($post_id, $lang, $hash, $embeddings);
+        } catch (\Exception $e) {
+            error_log('WP Assistant: Failed to store embeddings for post ' . $post_id . ': ' . $e->getMessage());
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Remove a post from the index.
+     *
+     * @param int $post_id The ID of the post to remove.
+     */
+    public function delete_post(int $post_id): void
+    {
+        try {
+            $db = $this->plugin->get('db');
+            $db->unset_document($post_id);
+        } catch (\Exception $e) {
+            error_log('WP Assistant: Failed to delete post ' . $post_id . ' from index: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Handle save_post hook.
+     *
+     * @param int $post_id Post ID.
+     * @param WP_Post $post Post object.
+     * @param bool $update Whether this is an existing post being updated.
+     */
+    public function save_post(int $post_id, \WP_Post $post, bool $update): void
+    {
+        // Skip autosaves, revisions, and non-published posts
+        if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
+            return;
+        }
+
+        if ($post->post_status === 'publish') {
+            $this->index_post($post_id);
+        } else {
+            $this->delete_post($post_id);
+        }
+    }
+
+    /**
+     * Generate an answer to a question using RAG.
+     *
+     * @param string $question The user's question.
+     * @return string JSON response from the AI.
+     */
+    public function rag_answer(string $question): string
+    {
+        try {
+            // Generate embedding for the question
+            $embedding = \amund\WP_Assistant\Client::embeddings($question);
+
+            // Search for similar chunks
+            $db = $this->plugin->get('db');
+            $results = $db->search_chunks($embedding, 5);
+
+            if (empty($results)) {
+                // No results found, return a default response
+                return json_encode([
+                    'message' => 'Je n\'ai pas trouvé d\'informations pertinentes pour répondre à votre question. Vous pouvez essayer de reformuler votre demande ou parcourir le site via les menus de navigation.',
+                    'post_ids' => [],
+                ]);
+            }
+
+            // Get unique post IDs from results
+            $post_ids = array_unique(array_column($results, 'post_id'));
+
+            if (empty($post_ids)) {
+                return json_encode([
+                    'message' => 'Je n\'ai pas trouvé d\'informations pertinentes pour répondre à votre question.',
+                    'post_ids' => [],
+                ]);
+            }
+
+            // Build context from the posts
+            $context_parts = [];
+            foreach ($post_ids as $post_id) {
+                $title = get_the_title($post_id);
+                $content = $this->text($post_id);
+                $context_parts[] = "Page: " . $title . "\n" . $content;
+            }
+            $context = implode("\n\n", $context_parts);
+
+            // Determine language (use first post's language or default)
+            $lang = 'français';
+            if (!empty($post_ids[0])) {
+                $post_lang = $this->get_post_lang($post_ids[0]);
+                $lang = $post_lang === 'fr' ? 'français' : ($post_lang === 'en' ? 'anglais' : $post_lang);
+            }
+
+            // Generate answer using AI
+            $response = \amund\WP_Assistant\Client::generate_answer([
+                '[LANG]' => $lang,
+                '[CONTENT]' => $context,
+                '[QUERY]' => $question,
+            ]);
+
+            return $response;
+        } catch (\Exception $e) {
+            error_log('WP Assistant RAG error: ' . $e->getMessage());
+            // Return a safe error response
+            return json_encode([
+                'message' => 'Désolé, une erreur est survenue lors du traitement de votre demande. Veuillez réessayer plus tard.',
+                'post_ids' => [],
+            ]);
+        }
     }
 }

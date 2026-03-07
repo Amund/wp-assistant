@@ -11,7 +11,8 @@ class Cli
 {
     private $plugin;
 
-    public function __construct( $plugin ) {
+    public function __construct($plugin)
+    {
         $this->plugin = $plugin;
     }
 
@@ -186,6 +187,80 @@ class Cli
             }
             \WP_CLI::log(str_pad('', 80, '-', STR_PAD_LEFT));
             \WP_CLI::success("Post_ID: $post_id, Chunks: $count, Hash: $hash");
+        }
+    }
+
+    /**
+     * Index posts for the assistant.
+     *
+     * ## OPTIONS
+     *
+     * [<post_id>]
+     * : The ID of the post to index. If not provided, index all published posts.
+     *
+     * [--force]
+     * : Force re-indexing even if the post is already up to date.
+     *
+     * @when after_wp_load
+     */
+    public function index($args, $assoc_args)
+    {
+        $assistant = $this->plugin->get('assistant');
+        $force = isset($assoc_args['force']) && $assoc_args['force'];
+
+        if (!empty($args)) {
+            // Index specific post
+            $post_id = (int) $args[0];
+            $post = get_post($post_id);
+            if (empty($post)) {
+                \WP_CLI::error("Post {$post_id} not found.");
+            }
+
+            if ($post->post_status !== 'publish') {
+                \WP_CLI::warning("Post {$post_id} is not published. Skipping.");
+                return;
+            }
+
+            \WP_CLI::log("Indexing post {$post_id}: " . get_the_title($post_id));
+            $success = $assistant->index_post($post_id);
+            if ($success) {
+                \WP_CLI::success("Post {$post_id} indexed successfully.");
+            } else {
+                \WP_CLI::error("Failed to index post {$post_id}.");
+            }
+        } else {
+            // Index all published posts
+            $posts = $assistant->get_posts();
+            $total = count($posts);
+            \WP_CLI::log("Found {$total} published posts.");
+
+            $success_count = 0;
+            $fail_count = 0;
+            $skip_count = 0;
+
+            foreach ($posts as $post_data) {
+                $post_id = $post_data['id'];
+                $title = $post_data['title'];
+                $outdated = $post_data['outdated'];
+
+                if (!$force && !$outdated) {
+                    \WP_CLI::log("Skipping post {$post_id} ({$title}) - already up to date.");
+                    $skip_count++;
+                    continue;
+                }
+
+                \WP_CLI::log("Indexing post {$post_id}: {$title}");
+                $success = $assistant->index_post($post_id);
+                if ($success) {
+                    $success_count++;
+                    \WP_CLI::log("  ✓ Success");
+                } else {
+                    $fail_count++;
+                    \WP_CLI::log("  ✗ Failed");
+                }
+            }
+
+            \WP_CLI::success("Indexing completed: {$success_count} succeeded, {$fail_count} failed, {$skip_count} skipped.");
         }
     }
 }

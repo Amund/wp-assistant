@@ -12,8 +12,8 @@ class Front
     {
         $this->plugin = $plugin;
 
-        add_action('wp_ajax_wp_assistant_answer', [self::class, 'answer']);
-        add_action('wp_ajax_nopriv_wp_assistant_answer', [self::class, 'answer']);
+        add_action('wp_ajax_wp_assistant_answer', [$this, 'answer']);
+        add_action('wp_ajax_nopriv_wp_assistant_answer', [$this, 'answer']);
         add_action('wp_assistant_form', [self::class, 'form']);
     }
 
@@ -94,7 +94,7 @@ class Front
 <?php
     }
 
-    public static function answer()
+    public function answer()
     {
         check_ajax_referer('wp_assistant_answer', 'security');
 
@@ -104,7 +104,7 @@ class Front
 
         // $client = WP_Assistant_Client::get_answer_client();
         $question = sanitize_text_field($_POST['question']);
-        $response = WP_Assistant::rag_answer($question);
+        $response = $this->plugin->get('assistant')->rag_answer($question);
 
         if ($response === NULL) {
             wp_send_json_error('response_error');

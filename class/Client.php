@@ -61,7 +61,7 @@ EOT;
     {
         if (self::$client) return self::$client;
 
-        if (!self::check_api_key()) throw new \Exception('WP_ASSISTANT_DB_PATH is not defined');
+        if (!self::check_api_key()) throw new \Exception('MISTRAL_API_KEY is not defined');
 
         $apiKey   = getenv('MISTRAL_API_KEY');
         self::$client = new MistralClient($apiKey);
@@ -72,7 +72,7 @@ EOT;
     {
         if (self::$client) return self::$client;
 
-        if (!self::check_api_key()) throw new \Exception('WP_ASSISTANT_DB_PATH is not defined');
+        if (!self::check_api_key()) throw new \Exception('MISTRAL_API_KEY is not defined');
 
         $apiKey   = getenv('MISTRAL_API_KEY');
         self::$client = new MistralClient($apiKey);
@@ -100,7 +100,7 @@ EOT;
         return $response['data'][0]['embedding'];
     }
 
-    public static function generate_answer(array $client, array $params): string
+    public static function generate_answer(array $params): string
     {
         $params = [
             '[LANG]' => 'français',

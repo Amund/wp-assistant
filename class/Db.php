@@ -21,6 +21,7 @@ class Db
         'count_document_chunks' => 'SELECT COUNT(*) AS `nb` FROM `chunks` WHERE `post_id` = ?',
         'insert_chunk' => 'INSERT INTO `chunks` (`post_id`, `embed`) VALUES (?, ?)',
         'delete_chunks' => 'DELETE FROM `chunks` WHERE `post_id` = ?',
+        'search_chunks' => 'SELECT c.post_id, vector_distance_cos(c.embed, vector(?)) as score FROM chunks c WHERE c.embed IS NOT NULL ORDER BY score DESC LIMIT ?',
     ];
 
     public function __construct(string $path, int $embed_size = 1024)
@@ -109,63 +110,35 @@ class Db
         $this->stmt('insert_chunk')->bind([$post_id, '[' . implode(',', $embed) . ']'])->query();
     }
 
+    public function search_chunks(array $embedding, int $limit = 10): array
+    {
+        $vector = '[' . implode(',', $embedding) . ']';
+        $result = $this->connection->query(
+            "SELECT c.post_id, vector_distance_cos(c.embed, vector(?)) as score FROM chunks c WHERE c.embed IS NOT NULL ORDER BY score DESC LIMIT ?",
+            [$vector, $limit]
+        );
+        return $result->fetchArray();
+    }
 
-    // public function set_document(int $post_id, string $lang, string $hash, array $emdeds): void
-    // {
-    //     $tx = $this->connection->transaction();
-    //     $this->stmt('delete_chunks')->execute($post_id);
-    //     $this->stmt('delete_document')->execute($post_id);
-    //     $this->stmt('insert_document')->execute([$post_id, $lang, $hash]);
-    //     foreach ($emdeds as $emded) {
-    //         $this->stmt('insert_chunk')->execute([$post_id, $emded]);
-    //     }
-    //     $tx->commit();
-    // }
 
-    // public function unset_document(int $post_id): void
-    // {
-    //     $tx = $this->connection->transaction();
-    //     $this->stmt('delete_chunks')->execute([$post_id]);
-    //     $this->stmt('delete_document')->execute([$post_id]);
-    //     $tx->commit();
-    // }
+    public function set_document(int $post_id, string $lang, string $hash, array $embeddings): void
+    {
+        $tx = $this->connection->transaction();
+        $this->stmt('delete_document')->bind([$post_id])->query();
+        $this->stmt('insert_document')->bind([$post_id, $lang, $hash])->query();
+        foreach ($embeddings as $embed) {
+            $this->insert_chunk($post_id, $embed);
+        }
+        $tx->commit();
+    }
 
-    // public function remove(int $post_id): void
-    // {
-    //     $this->connection->query("DELETE FROM chunks WHERE post_id = ?", [$post_id]);
-    //     $this->connection->query("DELETE FROM documents WHERE post_id = ?", [$post_id]);
-    // }
+    public function unset_document(int $post_id): void
+    {
+        $tx = $this->connection->transaction();
+        $this->stmt('delete_document')->bind([$post_id])->query();
+        $tx->commit();
+    }
 
-    // public function get_teaser(int $post_id): string
-    // {
-    //     $posts = $this->connection->query("SELECT teaser FROM documents WHERE post_id = ?", [$post_id])->fetchArray();
-    //     return (string) ($posts[0]['teaser'] ?? '');
-    // }
-
-    // public function get_all(): array
-    // {
-    //     return $this->connection->query("SELECT post_id, teaser FROM documents")->fetchArray();
-    // }
-
-    // public function db_update_post(int $post_id, string $teaser): void
-    // {
-    //     if (empty($teaser)) {
-    //         delete_post_meta($post_id, '_wp_assistant_teaser');
-    //         self::db_remove($post_id);
-    //     } else {
-    //         update_post_meta($post_id, '_wp_assistant_teaser', $teaser);
-    //         $embedding = WP_Assistant_Client::embeddings($teaser);
-    //         $vector = '[' . implode(',', $embedding) . ']';
-    //         try {
-    //             $this->db->query(
-    //                 "REPLACE INTO documents (post_id, teaser, embedding) VALUES (?, ?, vector(?))",
-    //                 [$post_id, $teaser, $vector],
-    //             );
-    //         } catch (Exception $e) {
-    //             error_log('Failed to update document: ' . $e->getMessage());
-    //         }
-    //     }
-    // }
 
     // public function db_search_documents(string $query): array
     // {

@@ -29,12 +29,11 @@ require_once __DIR__ . '/class/Client.php';
 require_once __DIR__ . '/class/Db.php';
 require_once __DIR__ . '/class/Front.php';
 
-add_action('plugins_loaded', function ()
-{
+add_action('plugins_loaded', function () {
     $plugin = new Plugin();
 
-    $plugin->set('cli', fn()=>new Cli($plugin));
-    $plugin->set('assistant', fn()=>new Assistant($plugin));
+    $plugin->set('cli', fn() => new Cli($plugin));
+    $plugin->set('assistant', fn() => new Assistant($plugin));
     $plugin->set('client', fn() => new Client($plugin));
     $plugin->set('back', fn() => new Back($plugin));
     $plugin->set('front', fn() => new Front($plugin));
@@ -59,12 +58,11 @@ add_action('plugins_loaded', function ()
 
 /*
 TODO:
-- Batch de génération des descriptions manquantes en base MySQL
-- Gestion des fournisseurs/modèles (embed, chat), clé d'api - Wordpress AI SDK
-- Affichage conditionnel du bouton de génération de description
-- Gestion des tokens, quotas fournisseurs ?
-- Logs des questions/réponses
-- paramètre du placeholder du champs de recherche
+- indexation des posts individuellement
+- hook save/delete post
+- indexation de masse
+- Logs des questions/réponses dans une base turso séparée
+- paramètrage du placeholder du champs de recherche (multilingue)
 */
 
 class Plugin
