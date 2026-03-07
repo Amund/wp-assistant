@@ -14,6 +14,7 @@ class Back
         add_action('admin_menu', [$this, 'admin_menu']);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('wp_ajax_wp_assistant_index_all', [$this, 'index_all_ajax']);
+        add_action('wp_ajax_wp_assistant_get_posts', [$this, 'get_posts_ajax']);
     }
 
     public function admin_menu()
@@ -41,26 +42,7 @@ class Back
 
         $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'general';
 
-        $icons = [
-            'ok' => '<i class="dashicons dashicons-yes" style="color: green;"></i>',
-            'ko' => '<i class="dashicons dashicons-no-alt" style="color: red;"></i>',
-            'debug' => '<i class="dashicons dashicons-admin-tools"></i>',
-        ];
-        $posts = $assistant->get_posts();
-        foreach ($posts as $i => $post) {
-            $outdated = $post['outdated'] ? $icons['ko'] : $icons['ok'];
-            $posts[$i]['link'] = strtr(
-                '<tr><td>[type]</td><td>[lang]</td><td><a href="[url]" target="_blank">[title]</a></td><td>[outdated]</td><td>[debug]</td></tr>',
-                [
-                    '[url]' => $post['url'],
-                    '[title]' => $post['title'],
-                    '[type]' => $post['post_type'],
-                    '[lang]' => $post['lang'],
-                    '[outdated]' => $outdated,
-                    '[debug]' => $icons['debug'],
-                ],
-            );
-        }
+
 
         $answer_prompt = $client::get_answer_prompt();
 ?>
@@ -96,6 +78,38 @@ class Back
                 </form>
 
             <?php elseif ($active_tab == 'contents') : ?>
+                <?php
+                $available_languages = $assistant->get_available_languages();
+                $available_post_types = $assistant->get_available_post_types();
+                $get_posts_nonce = wp_create_nonce('wp_assistant_get_posts');
+                ?>
+                <div class="filters">
+                    <label for="filter-post-type">Type de contenu:</label>
+                    <select id="filter-post-type">
+                        <option value="">Tous</option>
+                        <?php foreach ($available_post_types as $slug => $label) : ?>
+                            <option value="<?php echo esc_attr($slug); ?>"><?php echo esc_html($label); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+
+                    <label for="filter-lang">Langue:</label>
+                    <select id="filter-lang">
+                        <option value="">Toutes</option>
+                        <?php foreach ($available_languages as $code => $name) : ?>
+                            <option value="<?php echo esc_attr($code); ?>"><?php echo esc_html($name); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+
+                    <label for="filter-outdated">État indexation:</label>
+                    <select id="filter-outdated">
+                        <option value="">Tous</option>
+                        <option value="false">À jour</option>
+                        <option value="true">Dépassé</option>
+                    </select>
+
+                    <button id="filter-apply" class="button button-secondary">Filtrer</button>
+                    <button id="filter-reset" class="button button-link">Réinitialiser</button>
+                </div>
 
                 <table class="posts">
                     <thead>
@@ -107,10 +121,13 @@ class Back
                             <th>Debug</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <?php foreach ($posts as $p) echo $p['link']; ?>
+                    <tbody id="posts-container">
+                        <!-- Posts will be loaded via AJAX -->
                     </tbody>
                 </table>
+
+                <div id="pagination"></div>
+
                 <button id="wp-assistant-index-all" class="button button-primary">Tout indexer</button>
                 <div id="wp-assistant-results"></div>
 
@@ -132,6 +149,23 @@ class Back
                     }
                 }
 
+                .filters {
+                    margin: 2em 0;
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: 1em;
+                }
+
+                .filters label {
+                    font-weight: bold;
+                }
+
+                .filters select,
+                .filters button {
+                    height: 32px;
+                }
+
                 .posts {
                     border-collapse: collapse;
                     margin-block: 2em;
@@ -143,6 +177,21 @@ class Back
                         border: 1px solid #c3c4c7;
                         vertical-align: top;
                     }
+                }
+
+                #pagination {
+                    margin: 1em 0;
+                    text-align: center;
+                }
+
+                #pagination button {
+                    margin: 0 2px;
+                }
+
+                #pagination .current-page {
+                    display: inline-block;
+                    margin: 0 10px;
+                    font-weight: bold;
                 }
 
                 .test {
@@ -160,6 +209,93 @@ class Back
         </style>
         <script>
             jQuery(document).ready(function($) {
+                var currentPage = 1;
+                var filters = {
+                    post_type: '',
+                    lang: '',
+                    outdated: ''
+                };
+
+                // Load posts function
+                function loadPosts(page) {
+                    var data = {
+                        action: 'wp_assistant_get_posts',
+                        security: '<?php echo $get_posts_nonce; ?>',
+                        page: page,
+                        per_page: 50,
+                        post_type: filters.post_type,
+                        lang: filters.lang,
+                        outdated: filters.outdated
+                    };
+
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: data,
+                        beforeSend: function() {
+                            $('#posts-container').html('<tr><td colspan="5">Chargement...</td></tr>');
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                $('#posts-container').html(response.data.rows.join(''));
+                                updatePagination(response.data);
+                            } else {
+                                $('#posts-container').html('<tr><td colspan="5">Erreur: ' + response.data + '</td></tr>');
+                            }
+                        },
+                        error: function(xhr, status, error) {
+                            $('#posts-container').html('<tr><td colspan="5">Erreur: ' + error + '</td></tr>');
+                        }
+                    });
+                }
+
+                // Update pagination
+                function updatePagination(data) {
+                    var pagination = $('#pagination');
+                    pagination.empty();
+                    if (data.total_pages <= 1) return;
+
+                    // Previous button
+                    if (data.current_page > 1) {
+                        $('<button>').text('« Précédent').addClass('button').on('click', function() {
+                            loadPosts(data.current_page - 1);
+                        }).appendTo(pagination);
+                    }
+
+                    // Page indicator
+                    $('<span>').addClass('current-page').text('Page ' + data.current_page + ' sur ' + data.total_pages).appendTo(pagination);
+
+                    // Next button
+                    if (data.current_page < data.total_pages) {
+                        $('<button>').text('Suivant »').addClass('button').on('click', function() {
+                            loadPosts(data.current_page + 1);
+                        }).appendTo(pagination);
+                    }
+                }
+
+                // Apply filters
+                $('#filter-apply').on('click', function() {
+                    filters.post_type = $('#filter-post-type').val();
+                    filters.lang = $('#filter-lang').val();
+                    filters.outdated = $('#filter-outdated').val();
+                    currentPage = 1;
+                    loadPosts(currentPage);
+                });
+
+                // Reset filters
+                $('#filter-reset').on('click', function() {
+                    $('#filter-post-type, #filter-lang, #filter-outdated').val('');
+                    filters.post_type = '';
+                    filters.lang = '';
+                    filters.outdated = '';
+                    currentPage = 1;
+                    loadPosts(currentPage);
+                });
+
+                // Load initial posts
+                loadPosts(currentPage);
+
+                // Keep existing index all functionality
                 $('#wp-assistant-index-all').on('click', function() {
                     var data = {
                         'action': 'wp_assistant_index_all',
@@ -177,6 +313,8 @@ class Back
                         success: function(response) {
                             $('#wp-assistant-index-all').prop('disabled', false);
                             $('#wp-assistant-results').html(response);
+                            // Reload posts after indexing
+                            loadPosts(currentPage);
                         },
                         error: function(xhr, status, error) {
                             $('#wp-assistant-index-all').prop('disabled', false);
@@ -233,5 +371,58 @@ class Back
         $html .= sprintf('<p><strong>Résumé :</strong> %d succès, %d échecs, %d ignorés (déjà à jour).</p>', $success, $failed, $skipped);
 
         wp_die($html);
+    }
+
+    /**
+     * Handle AJAX request for filtered posts.
+     */
+    public function get_posts_ajax()
+    {
+        check_ajax_referer('wp_assistant_get_posts', 'security');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized user');
+        }
+
+        $assistant = $this->plugin->get('assistant');
+
+        $args = [
+            'post_type' => !empty($_POST['post_type']) ? sanitize_text_field($_POST['post_type']) : '',
+            'lang' => !empty($_POST['lang']) ? sanitize_text_field($_POST['lang']) : '',
+            'outdated' => isset($_POST['outdated']) ? ($_POST['outdated'] === 'true' ? true : ($_POST['outdated'] === 'false' ? false : null)) : null,
+            'page' => !empty($_POST['page']) ? max(1, (int) $_POST['page']) : 1,
+            'per_page' => !empty($_POST['per_page']) ? max(1, (int) $_POST['per_page']) : 50,
+        ];
+
+        $result = $assistant->get_filtered_posts($args);
+
+        // Generate HTML rows
+        $icons = [
+            'ok' => '<i class="dashicons dashicons-yes" style="color: green;"></i>',
+            'ko' => '<i class="dashicons dashicons-no-alt" style="color: red;"></i>',
+            'debug' => '<i class="dashicons dashicons-admin-tools"></i>',
+        ];
+        $rows = [];
+        foreach ($result['posts'] as $post) {
+            $outdated_icon = $post['outdated'] ? $icons['ko'] : $icons['ok'];
+            $rows[] = strtr(
+                '<tr><td>[type]</td><td>[lang]</td><td><a href="[url]" target="_blank">[title]</a></td><td>[outdated]</td><td>[debug]</td></tr>',
+                [
+                    '[url]' => esc_url($post['url']),
+                    '[title]' => esc_html($post['title']),
+                    '[type]' => esc_html($post['post_type']),
+                    '[lang]' => esc_html($post['lang']),
+                    '[outdated]' => $outdated_icon,
+                    '[debug]' => $icons['debug'],
+                ]
+            );
+        }
+
+        wp_send_json_success([
+            'rows' => $rows,
+            'total_posts' => $result['total_posts'],
+            'total_pages' => $result['total_pages'],
+            'current_page' => $result['current_page'],
+        ]);
     }
 }
