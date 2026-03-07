@@ -39,11 +39,8 @@ class Back
     {
         $assistant = $this->plugin->get('assistant');
         $client = $this->plugin->get('client');
-
         $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'general';
-
-
-
+        $get_posts_nonce = wp_create_nonce('wp_assistant_get_posts');
         $answer_prompt = $client::get_answer_prompt();
 ?>
         <div class="wrap wp-assistant">
@@ -81,7 +78,6 @@ class Back
                 <?php
                 $available_languages = $assistant->get_available_languages();
                 $available_post_types = $assistant->get_available_post_types();
-                $get_posts_nonce = wp_create_nonce('wp_assistant_get_posts');
                 ?>
                 <div class="filters">
                     <label for="filter-post-type">Type de contenu:</label>
@@ -100,7 +96,7 @@ class Back
                         <?php endforeach; ?>
                     </select>
 
-                    <label for="filter-outdated">État indexation:</label>
+                    <label for="filter-outdated">Indexation:</label>
                     <select id="filter-outdated">
                         <option value="">Tous</option>
                         <option value="false">À jour</option>
@@ -128,7 +124,10 @@ class Back
 
                 <div id="pagination"></div>
 
-                <button id="wp-assistant-index-all" class="button button-primary">Tout indexer</button>
+                <?php $outdated_count = $assistant->count_outdated_posts(); ?>
+                <?php if ($outdated_count > 0) : ?>
+                    <button id="wp-assistant-index-all" class="button button-primary">Tout indexer</button>
+                <?php endif; ?>
                 <div id="wp-assistant-results"></div>
 
             <?php elseif ($active_tab == 'test') : ?>
@@ -348,14 +347,12 @@ class Back
         foreach ($posts as $post) {
             if (!$post['outdated']) {
                 $skipped++;
-                $report[] = sprintf('Post #%d "%s" (%s) : déjà à jour', $post['id'], $post['title'], $post['lang']);
                 continue;
             }
 
             $result = $assistant->index_post($post['id']);
             if ($result) {
                 $success++;
-                $report[] = sprintf('Post #%d "%s" (%s) : indexé avec succès', $post['id'], $post['title'], $post['lang']);
             } else {
                 $failed++;
                 $report[] = sprintf('Post #%d "%s" (%s) : échec de l\'indexation', $post['id'], $post['title'], $post['lang']);

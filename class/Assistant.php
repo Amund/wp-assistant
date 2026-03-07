@@ -39,6 +39,52 @@ class Assistant
     }
 
     /**
+     * Checks if a post has any text content.
+     *
+     * @param int $post_id The ID of the post.
+     * @return bool True if the post has non-empty content.
+     */
+    public function has_content(int $post_id): bool
+    {
+        return !empty($this->text($post_id));
+    }
+
+    /**
+     * Determines if a post is outdated (needs reindexing).
+     * A post without content is never considered outdated.
+     *
+     * @param int $post_id The ID of the post.
+     * @return bool True if the post is outdated and has content.
+     */
+    public function is_outdated(int $post_id): bool
+    {
+        if (!$this->has_content($post_id)) {
+            return false;
+        }
+        $hash = $this->hash($this->text($post_id));
+        $db = $this->plugin->get('db');
+        $doc = $db->select_document($post_id);
+        if ($doc) {
+            return $hash !== $doc['hash'];
+        }
+        return true;
+    }
+
+    /**
+     * Counts the number of outdated posts (posts with content that need reindexing).
+     *
+     * @return int The count of outdated posts.
+     */
+    public function count_outdated_posts(): int
+    {
+        $result = $this->get_filtered_posts([
+            'outdated' => true,
+            'per_page' => 1,
+        ]);
+        return $result['total_posts'];
+    }
+
+    /**
      * Generates a hash for the given text using the configured algorithm.
      *
      * @param string $text The text to hash.
@@ -162,15 +208,9 @@ class Assistant
 
         // Step 2: Filter by outdated if needed
         if ($args['outdated'] !== null) {
-            $db = $this->plugin->get('db');
             $filtered_ids = [];
             foreach ($post_ids as $post_id) {
-                $hash = $this->hash($this->text($post_id));
-                $doc = $db->select_document($post_id);
-                $outdated = true;
-                if ($doc) {
-                    $outdated = $hash !== $doc['hash'];
-                }
+                $outdated = $this->is_outdated($post_id);
                 if ($outdated === $args['outdated']) {
                     $filtered_ids[] = $post_id;
                 }
@@ -209,12 +249,7 @@ class Assistant
                 $lang = $this->get_post_lang($id);
 
                 // Load outdated status (already computed if outdated filter used, but recompute for consistency)
-                $hash = $this->hash($this->text($id));
-                $doc = $db->select_document($id);
-                $outdated = true;
-                if ($doc) {
-                    $outdated = $hash !== $doc['hash'];
-                }
+                $outdated = $this->is_outdated($id);
 
                 $posts[] = [
                     'id' => $id,
