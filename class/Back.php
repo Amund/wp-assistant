@@ -20,14 +20,11 @@ class Back
     public function admin_menu()
     {
         add_options_page('Assistant', 'Assistant', 'manage_options', 'wp_assistant', [$this, 'options_page']);
-        add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'apd_settings_link');
-        function apd_settings_link(array $links)
-        {
-            $url = get_admin_url() . "options-general.php?page=my-plugin";
-            $settings_link = '<a href="' . $url . '">' . __('Settings', 'textdomain') . '</a>';
-            $links[] = $settings_link;
+        add_filter('plugin_action_links_wp-assistant/wp-assistant.php', function (array $links) {
+            $url = get_admin_url() . "options-general.php?page=wp_assistant";
+            $links[] = '<a href="' . $url . '">' . __('Settings') . '</a>';
             return $links;
-        }
+        });
     }
 
     public function register_settings()
@@ -39,7 +36,7 @@ class Back
     {
         $assistant = $this->plugin->get('assistant');
         $client = $this->plugin->get('client');
-        $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'general';
+        $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'contents';
         $get_posts_nonce = wp_create_nonce('wp_assistant_get_posts');
         $answer_prompt = $client::get_answer_prompt();
 ?>
@@ -47,12 +44,12 @@ class Back
             <h1>WP Assistant</h1>
 
             <h2 class="nav-tab-wrapper">
-                <a href="?page=wp_assistant&tab=general" class="nav-tab <?php echo $active_tab == 'general' ? 'nav-tab-active' : ''; ?>">Général</a>
                 <a href="?page=wp_assistant&tab=contents" class="nav-tab <?php echo $active_tab == 'contents' ? 'nav-tab-active' : ''; ?>">Contenus</a>
+                <a href="?page=wp_assistant&tab=settings" class="nav-tab <?php echo $active_tab == 'settings' ? 'nav-tab-active' : ''; ?>">Réglages</a>
                 <a href="?page=wp_assistant&tab=test" class="nav-tab <?php echo $active_tab == 'test' ? 'nav-tab-active' : ''; ?>">Test</a>
             </h2>
 
-            <?php if ($active_tab == 'general') : ?>
+            <?php if ($active_tab == 'settings') : ?>
 
                 <form method="post" action="options.php">
                     <?php settings_fields('wp_assistant_options'); ?>
@@ -60,7 +57,8 @@ class Back
                         <tr valign="top">
                             <th scope="row">
                                 Prompt de réponse
-                                <p class="description">Le prompt utilisé pour générer les réponses. Vous pouvez utiliser les variables suivantes, qui seront remplacées par leur véritable valeur lors de l'exécution du prompt :
+                                <p class="description">
+                                    Le prompt utilisé pour générer les réponses. Vous pouvez utiliser les variables suivantes, qui seront remplacées par leur véritable valeur lors de l'exécution du prompt :
                                     <br>[LANG] Langue actuelle
                                     <br>[CONTENT] Contenu des pages présélectionnées
                                     <br>[QUERY] Question de l'utilisateur
@@ -80,27 +78,24 @@ class Back
                 $available_post_types = $assistant->get_available_post_types();
                 ?>
                 <div class="filters">
-                    <label for="filter-post-type">Type de contenu:</label>
                     <select id="filter-post-type">
-                        <option value="">Tous</option>
+                        <option value="">Tous les types</option>
                         <?php foreach ($available_post_types as $slug => $label) : ?>
                             <option value="<?php echo esc_attr($slug); ?>"><?php echo esc_html($label); ?></option>
                         <?php endforeach; ?>
                     </select>
 
-                    <label for="filter-lang">Langue:</label>
                     <select id="filter-lang">
-                        <option value="">Toutes</option>
+                        <option value="">Toutes les langues</option>
                         <?php foreach ($available_languages as $code => $name) : ?>
                             <option value="<?php echo esc_attr($code); ?>"><?php echo esc_html($name); ?></option>
                         <?php endforeach; ?>
                     </select>
 
-                    <label for="filter-outdated">Indexation:</label>
                     <select id="filter-outdated">
-                        <option value="">Tous</option>
-                        <option value="false">À jour</option>
-                        <option value="true">Dépassé</option>
+                        <option value="">Toute les indexations</option>
+                        <option value="false">Indexation À jour</option>
+                        <option value="true">Indexation périmée</option>
                     </select>
 
                     <button id="filter-apply" class="button button-secondary">Filtrer</button>
@@ -111,15 +106,12 @@ class Back
                     <thead>
                         <tr>
                             <th>Type</th>
-                            <th>Lang</th>
+                            <th>Langue</th>
                             <th>Contenu</th>
-                            <th>Index</th>
-                            <th>Debug</th>
+                            <th>Indexation</th>
                         </tr>
                     </thead>
-                    <tbody id="posts-container">
-                        <!-- Posts will be loaded via AJAX -->
-                    </tbody>
+                    <tbody id="posts-container"></tbody>
                 </table>
 
                 <div id="pagination"></div>
@@ -144,7 +136,7 @@ class Back
                     textarea {
                         width: 100%;
                         resize: vertical;
-                        min-height: 50vh;
+                        min-height: 33vh;
                     }
                 }
 
@@ -176,11 +168,17 @@ class Back
                         border: 1px solid #c3c4c7;
                         vertical-align: top;
                     }
+
+                    td[colspan] {
+                        text-align: center;
+                        padding-block: 2em;
+                    }
                 }
 
                 #pagination {
-                    margin: 1em 0;
-                    text-align: center;
+                    display: flex;
+                    justify-content: center;
+                    gap: 1em;
                 }
 
                 #pagination button {
@@ -188,9 +186,8 @@ class Back
                 }
 
                 #pagination .current-page {
-                    display: inline-block;
-                    margin: 0 10px;
-                    font-weight: bold;
+                    display: flex;
+                    align-items: center;
                 }
 
                 .test {
@@ -221,7 +218,7 @@ class Back
                         action: 'wp_assistant_get_posts',
                         security: '<?php echo $get_posts_nonce; ?>',
                         page: page,
-                        per_page: 50,
+                        per_page: 25,
                         post_type: filters.post_type,
                         lang: filters.lang,
                         outdated: filters.outdated
@@ -232,18 +229,18 @@ class Back
                         type: 'POST',
                         data: data,
                         beforeSend: function() {
-                            $('#posts-container').html('<tr><td colspan="5">Chargement...</td></tr>');
+                            $('#posts-container').html('<tr><td colspan="4">Chargement...</td></tr>');
                         },
                         success: function(response) {
                             if (response.success) {
                                 $('#posts-container').html(response.data.rows.join(''));
                                 updatePagination(response.data);
                             } else {
-                                $('#posts-container').html('<tr><td colspan="5">Erreur: ' + response.data + '</td></tr>');
+                                $('#posts-container').html('<tr><td colspan="4">Erreur: ' + response.data + '</td></tr>');
                             }
                         },
                         error: function(xhr, status, error) {
-                            $('#posts-container').html('<tr><td colspan="5">Erreur: ' + error + '</td></tr>');
+                            $('#posts-container').html('<tr><td colspan="4">Erreur: ' + error + '</td></tr>');
                         }
                     });
                 }
@@ -397,20 +394,18 @@ class Back
         $icons = [
             'ok' => '<i class="dashicons dashicons-yes" style="color: green;"></i>',
             'ko' => '<i class="dashicons dashicons-no-alt" style="color: red;"></i>',
-            'debug' => '<i class="dashicons dashicons-admin-tools"></i>',
         ];
         $rows = [];
         foreach ($result['posts'] as $post) {
             $outdated_icon = $post['outdated'] ? $icons['ko'] : $icons['ok'];
             $rows[] = strtr(
-                '<tr><td>[type]</td><td>[lang]</td><td><a href="[url]" target="_blank">[title]</a></td><td>[outdated]</td><td>[debug]</td></tr>',
+                '<tr><td>[type]</td><td>[lang]</td><td><a href="[url]" target="_blank">[title]</a></td><td>[outdated]</td></tr>',
                 [
                     '[url]' => esc_url($post['url']),
                     '[title]' => esc_html($post['title']),
                     '[type]' => esc_html($post['post_type']),
                     '[lang]' => esc_html($post['lang']),
                     '[outdated]' => $outdated_icon,
-                    '[debug]' => $icons['debug'],
                 ]
             );
         }

@@ -15,16 +15,15 @@ class Front
         add_action('wp_ajax_wp_assistant_answer', [$this, 'answer']);
         add_action('wp_ajax_nopriv_wp_assistant_answer', [$this, 'answer']);
         add_action('wp_assistant_form', [self::class, 'form']);
-        add_shortcode('wp_assistant', [$this, 'shortcode']);
+        add_shortcode('wp_assistant_form', [$this, 'shortcode']);
     }
 
     public static function form()
     {
 ?>
         <div id="wp-assistant-question">
-            <?php $placeholder = apply_filters('wp_assistant_placeholder', 'Comment puis-je vous aider ?'); ?>
-            <input type="text" placeholder="<?php echo esc_attr($placeholder); ?>" value="">
-            <button class="button">Ok</button>
+            <input type="search" placeholder="<?= esc_attr(apply_filters('wp_assistant_placeholder', 'Comment puis-je vous aider ?')); ?>" value="">
+            <button class="button"><?= esc_html(apply_filters('wp_assistant_button', 'Ok')) ?></button>
             <div></div>
         </div>
         <style>
@@ -152,7 +151,3 @@ class Front
         return ob_get_clean();
     }
 }
-
-// add_filter('wp_assistant_answer_item', function ($post_html, $post_id) {
-//     return '<a class="item" href="' . get_permalink($post_id) . '">' . get_the_title($post_id) . '</a>';
-// }, 10, 2);

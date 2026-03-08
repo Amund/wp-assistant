@@ -9,8 +9,6 @@
  * License:           MIT
  */
 
-// composer require turso/libsql partitech/php-mistral league/html-to-markdown michelf/php-markdown
-
 namespace amund\WP_Assistant;
 
 if (!defined('ABSPATH')) {
