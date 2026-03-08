@@ -1,22 +1,29 @@
 <?php
 
+namespace amund\WP_Assistant;
+
 use Michelf\Markdown;
 
-class WP_Assistant_Front
+class Front
 {
-    public static function init()
+    private $plugin;
+
+    public function __construct($plugin)
     {
-        add_action('wp_ajax_wp_assistant_answer', [self::class, 'answer']);
-        add_action('wp_ajax_nopriv_wp_assistant_answer', [self::class, 'answer']);
+        $this->plugin = $plugin;
+
+        add_action('wp_ajax_wp_assistant_answer', [$this, 'answer']);
+        add_action('wp_ajax_nopriv_wp_assistant_answer', [$this, 'answer']);
         add_action('wp_assistant_form', [self::class, 'form']);
+        add_shortcode('wp_assistant_form', [$this, 'shortcode']);
     }
 
     public static function form()
     {
 ?>
         <div id="wp-assistant-question">
-            <input type="text" placeholder="Comment puis-je vous aider ?" value="">
-            <button class="button">Ok</button>
+            <input type="search" placeholder="<?= esc_attr(apply_filters('wp_assistant_placeholder', 'Comment puis-je vous aider ?')); ?>" value="">
+            <button class="button"><?= esc_html(apply_filters('wp_assistant_button', 'Ok')) ?></button>
             <div></div>
         </div>
         <style>
@@ -88,7 +95,7 @@ class WP_Assistant_Front
 <?php
     }
 
-    public static function answer()
+    public function answer()
     {
         check_ajax_referer('wp_assistant_answer', 'security');
 
@@ -96,8 +103,10 @@ class WP_Assistant_Front
             wp_send_json_error('Aucune demande');
         }
 
+        // $client = WP_Assistant_Client::get_answer_client();
         $question = sanitize_text_field($_POST['question']);
-        $response = WP_Assistant::rag_answer($question);
+        $assistant = $this->plugin->get('assistant');
+        $response = $assistant->rag_answer($question);
 
         if ($response === NULL) {
             wp_send_json_error('response_error');
@@ -134,8 +143,11 @@ class WP_Assistant_Front
 
         wp_send_json_success($message . $posts);
     }
-}
 
-// add_filter('wp_assistant_answer_item', function ($post_html, $post_id) {
-//     return '<a class="item" href="' . get_permalink($post_id) . '">' . get_the_title($post_id) . '</a>';
-// }, 10, 2);
+    public function shortcode(): string
+    {
+        ob_start();
+        self::form();
+        return ob_get_clean();
+    }
+}

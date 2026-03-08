@@ -9,7 +9,7 @@
  * License:           MIT
  */
 
-// composer require turso/libsql partitech/php-mistral league/html-to-markdown michelf/php-markdown
+namespace amund\WP_Assistant;
 
 if (!defined('ABSPATH')) {
     exit();
@@ -19,23 +19,61 @@ if (defined('DOING_AJAX') && DOING_AJAX && ! empty($_POST['action']) && ($_POST[
     return;
 }
 
-require_once __DIR__ . '/class/WP_Assistant.php';
-require_once __DIR__ . '/class/WP_Assistant_Client.php';
-require_once __DIR__ . '/class/WP_Assistant_Back.php';
-require_once __DIR__ . '/class/WP_Assistant_Front.php';
+require_once __DIR__ . '/class/Assistant.php';
+require_once __DIR__ . '/class/Back.php';
+require_once __DIR__ . '/class/Chunker.php';
+require_once __DIR__ . '/class/Cli.php';
+require_once __DIR__ . '/class/Client.php';
+require_once __DIR__ . '/class/Db.php';
+require_once __DIR__ . '/class/Front.php';
 
-define('WP_ASSISTANT_DB_PATH', WP_CONTENT_DIR . '/../../assistant.db');
+add_action('plugins_loaded', function () {
+    $plugin = new Plugin();
 
-add_action('plugins_loaded', [WP_Assistant_Front::class, 'init']);
+    $plugin->set('cli', fn() => new Cli($plugin));
+    $plugin->set('assistant', fn() => new Assistant($plugin));
+    $plugin->set('client', fn() => new Client($plugin));
+    $plugin->set('back', fn() => new Back($plugin));
+    $plugin->set('front', fn() => new Front($plugin));
+    $plugin->set('db', function () {
+        $path = WP_CONTENT_DIR . '/wp-assistant.db';
+        if (!empty($_ENV['WP_ASSISTANT_DB_PATH'])) {
+            $path = $_ENV['WP_ASSISTANT_DB_PATH'];
+        }
+        return new Db($path);
+    });
 
-if (is_admin()) {
-    add_action('plugins_loaded', [WP_Assistant_Back::class, 'init']);
-}
+    if (defined('WP_CLI') && WP_CLI) {
+        \WP_CLI::add_command('assistant', $plugin->get('cli'));
+    } else {
+        $plugin->get('assistant');
+        $plugin->get('front');
+        if (is_admin()) {
+            $plugin->get('back');
+        }
+    }
+});
 
 /*
 TODO:
-- Batch de génération des descriptions manquantes en base MySQL
-- Gestion des fournisseurs/modèles (embed, chat), clé d'api - Wordpress AI SDK
-- Affichage conditionnel du bouton de génération de description
-- Gestion des tokens, quotas fournisseurs ?
+- Logs des questions/réponses dans une base turso séparée
 */
+
+class Plugin
+{
+    private $bindings = [];
+
+    public function set(string $id, callable $factory): void
+    {
+        $this->bindings[$id] = $factory;
+    }
+
+    public function get(string $id)
+    {
+        if (! isset($this->bindings[$id])) {
+            throw new \Exception("Target binding [$id] does not exist.");
+        }
+        $factory = $this->bindings[$id];
+        return $factory($this);
+    }
+}
