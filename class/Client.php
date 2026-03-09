@@ -124,7 +124,6 @@ EOT;
         $messages = self::client()
             ->getMessages()
             ->addUserMessage($prompt);
-        error_log(var_export($messages, true));
 
         $response = self::client()
             ->chat($messages, self::$answer_params);

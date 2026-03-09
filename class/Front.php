@@ -103,7 +103,6 @@ class Front
             wp_send_json_error('Aucune demande');
         }
 
-        // $client = WP_Assistant_Client::get_answer_client();
         $question = sanitize_text_field($_POST['question']);
         $assistant = $this->plugin->get('assistant');
         $response = $assistant->rag_answer($question);
@@ -113,7 +112,7 @@ class Front
         }
 
         if (is_array($response)) {
-            error_log(print_r($response, true));
+            // error_log(print_r($response, true));
             wp_send_json_error('response_error');
         }
 
@@ -122,7 +121,7 @@ class Front
 
         $json = json_decode($response, true);
         if ($json === NULL) {
-            error_log(var_export($response, true));
+            // error_log(var_export($response, true));
             wp_send_json_error('json_error');
         }
 
